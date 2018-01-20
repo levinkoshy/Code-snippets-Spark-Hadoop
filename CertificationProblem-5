@@ -1,0 +1,46 @@
+//30 GB
+
+spark-shell --master yarn \
+ --conf spark-ui.port=12345 \
+ --num-executors 10 \
+ --executor-cores 2 \
+ --executor-memory 3G 
+
+//spark-shell -help
+
+val lines = sc.textFile("/public/randomtextwriter")
+
+val words = lines.flatMap(x => x.split(" ")).map(x=>(x,1))
+
+
+//controlling the downstream jobs
+//limiting the number of output files to 8
+//reduceByKey etc... has an additional argument numTasks
+
+val wordCount = words.reduceByKey((x,y)=>x+y,8)
+
+wordCount.toDF("word","count").write.avro("/user/levinkoshy/solutions/solutions05/wordcount")
+
+
+//If avro cant be found, we might need to use avro package
+
+spark-shell --master yarn \
+ --conf spark-ui.port=12345 \
+ --num-executors 10 \
+ --executor-cores 2 \
+ --executor-memory 3G \
+ --packages com.databricks:spark-avro_2.10:2.0.1
+//artifactid:groupid:version
+
+import com.databricks.spark.avro._
+wordCount.toDF("word","count").write.avro("/user/levinkoshy/solutions/solutions05/wordcount")
+
+sqlContext.read.avro("/user/levinkoshy/solutions/solutions05/wordcount")
+
+//may be they will give jar files instead; in that case
+spark-shell --master yarn \
+ --conf spark-ui.port=12345 \
+ --num-executors 10 \
+ --executor-cores 2 \
+ --executor-memory 3G \
+ --jars " location "

@@ -1,0 +1,81 @@
+hadoop fs -ls -h /public/crime/csv
+
+//-h for human readable format - to know the size of the file
+//compression
+//tab-delimited file
+
+
+spark-shell --master yarn \
+ --conf spark-ui.port=12345 \
+ --num-executors 6 \
+ --executor-cores 2 \
+ --executor-memory 2G 
+
+val crimeData = sc.textFile("/public/crime/csv")
+crimeData.take(10).foreach(println)
+
+val header = crimeData.first
+val crimeDataWithoutHeader = crimeData.filter(x => x != header)
+
+
+//12/31/2017 -> 20171231; because we need to sort
+//split will convert the RDD to array
+val crimeDataMap = crimeDataWithoutHeader.map(x=> {
+ val Month1= x.split(",")(2).split(" ")(0)
+ val Month2= Month1.split("/")(2) + Month1.split("/")(0)
+ ((Month2.toInt,x.split(",")(5)),1)
+ })
+
+
+val crimeDataCount = crimeDataMap.reduceByKey((x,y) => x+y)
+val crimeDataCountMap = crimeDataCount.map(x => ((x._1._1,-x._2),x._1._1 + "\t" +  x._1._2 + "\t" +x._2)).sortByKey()
+val crimeDataCountMapTrans = crimeDataCountMap.map(x => x._2)
+
+//for zipping file
+cd /etc/hadoop/conf
+
+crimeDataCountMapTrans.saveAsTextFile("/user/levinkoshy/solutions/solution01/crimes_by_type_by_month",classOf[org.apache.hadoop.io.compress.GzipCodec])
+
+//for merging into 1 file
+crimeDataCountMapTrans.coalesce(1).saveAsTextFile("/user/levinkoshy/solutions/solution01/crimes_by_type_by_month",classOf[org.apache.hadoop.io.compress.GzipCodec])
+
+//
+//
+//Solution using DataFrames
+
+
+val crimeData = sc.textFile("/public/crime/csv")
+val header = crimeData.first
+val crimeDataWithoutHeader = crimeData.filter(x => x != header)
+
+val crimeDataWithDateAndType = crimeDataWithoutHeader.map(x => (x.split(",")(2),x.split(",")(5))).toDF("crime_date","crime_type")
+
+crimeDataWithDateAndType.registerTempTable("crime_data")
+
+sqlContext.sql("select * from crime_data").show
+
+
+sqlContext.sql("select cast(concat(substr(crime_date,7,4),substr(crime_date,0,2)) as int) as crime_month, crime_type, count(1) crime_count_per_month from crime_data group by cast(concat(substr(crime_date,7,4),substr(crime_date,0,2)) as int),crime_type order by crime_month, crime_count_per_month desc" ).show
+
+val crimeCountPerMonthPerTypeDF = sqlContext.sql("select cast(concat(substr(crime_date,7,4),substr(crime_date,0,2)) as int) as crime_month, crime_type, count(1) crime_count_per_month from crime_data group by cast(concat(substr(crime_date,7,4),substr(crime_date,0,2)) as int),crime_type order by crime_month, crime_count_per_month desc")
+
+val crimeCountPerMonthPerTypeDFDelimited = crimeCountPerMonthPerTypeDF.rdd.map(x => x.mkString("\t"))
+//each element in RDD is row. Row is nothing but a collection; collection has mkString function
+
+crimeCountPerMonthPerTypeDFDelimited.coalesce(1).saveAsTextFile("/user/levinkoshy/solutions/solution01/crimes_by_type_by_month_DF",classOf[org.apache.hadoop.io.compress.GzipCodec])
+
+
+//validation - getting the file to the local directory from HDFS
+hadoop fs -get /user/levinkoshy/solutions/solution01/crimes_by_type_by_month_DF .
+ cd crimes_by_type_by_month_DF
+ ls -ltr
+ gunzip part-00000.gz
+ view part-00000
+
+
+//If it is any other file format other than text file, the above method wont be useful; 
+//avro format etc., follow the below steps
+ val output = sc.textFile("/user/levinkoshy/solutions/solution01/crimes_by_type_by_month_DF") 
+ output.collect().foreach(println)
+
+ 

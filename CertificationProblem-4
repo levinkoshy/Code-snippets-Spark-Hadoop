@@ -1,0 +1,23 @@
+//From local file system
+//Since there are a number of files, we can't use scala.io.Source
+//So we need to transfer all the files from local file system to HDFS
+
+hadoop fs -copyFromLocal /data/nyse /user/levinkoshy/nyse
+
+du -sh /data/nyse
+
+//380 MB
+spark-shell --master yarn \
+ --conf spark-ui.port=12345 \
+ --num-executors 4 
+
+val nyse = sc.textFile("/user/levinkoshy/nyse").coalesce(4)
+
+val nyseDF = nyse.map(x => (x.split(",")(0),x.split(",")(1),x.split(",")(2).toFloat,x.split(",")(3).toFloat,x.split(",")(4).toFloat,x.split(",")(5).toFloat,x.split(",")(6).toInt)).toDF("stockticker","transactiondate","openprice","highprice","lowprice","closeprice","volume")
+
+sqlContext.setConf("spark.sql.shuffle.partitions","4")
+nyseDF.write.parquet("/user/levinkoshy/nyse_parquet")
+
+//validation
+
+sqlContext.read.parquet("/user/levinkoshy/nyse_parquet").show

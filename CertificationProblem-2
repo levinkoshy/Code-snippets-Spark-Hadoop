@@ -1,0 +1,52 @@
+import scala.io.Source
+
+val ordersRaw = Source.fromFile("/data/retail_db/orders/part-00000").getLines.toList
+//fromFile creates a char array
+//.getLines-- converts to iterable
+
+val orders= sc.parallelize(ordersRaw)
+
+val customersRaw = Source.fromFile("/data/retail_db/customers/part-00000").getLines.toList
+
+val customers = sc.parallelize(customersRaw)
+
+val ordersMap = orders.map(x=>(x.split(",")(2).toInt,1))
+
+val customersMap = customers.map(x=>(x.split(",")(0).toInt,(x.split(",")(2),x.split(",")(1))))
+
+
+val customersLeftOuterJoinOrders = customersMap.leftOuterJoin(ordersMap)
+
+
+val customersSorted = customersLeftOuterJoinOrders.map(x=>x._2).filter(x=> x._2== None).sortByKey().map(x=>x._1)
+
+customersSorted.coalesce(1).saveAsTextFile("/user/levinkoshy/solutions/solutions02/inactive_customers")
+
+
+///
+///
+///Using DataFrames
+import scala.io.Source
+
+val ordersRaw = Source.fromFile("/data/retail_db/orders/part-00000").getLines.toList
+val orders= sc.parallelize(ordersRaw)
+
+val ordersDF = orders.map(x=>x.split(",")(2).toInt).toDF("order_customer_id")
+ordersDF.show
+
+
+val customersRaw = Source.fromFile("/data/retail_db/customers/part-00000").getLines.toList
+val customers = sc.parallelize(customersRaw)
+
+val customersDF= customers.map(x=>(x.split(",")(0).toInt,x.split(",")(1),x.split(",")(2))).toDF("customer_id","customer_fname","customer_lname")
+
+ordersDF.registerTempTable("orders")
+customersDF.registerTempTable("customers")
+
+
+sqlContext.sql("select c.customer_lname, c.customer_fname from customers c left outer join orders o on c.customer_id=o.order_customer_id where order_customer_id is NULL order by c.customer_lname,c.customer_fname ").show
+
+sqlContext.setConf("spark.sql.shuffle.partitions","1")
+val customersOutput=sqlContext.sql("select c.customer_lname, c.customer_fname from customers c left outer join orders o on c.customer_id=o.order_customer_id where order_customer_id is NULL order by c.customer_lname,c.customer_fname ")
+
+customersOutput.rdd.map(x=>x.mkString(",")).saveAsTextFile("/user/levinkoshy/solutions/solutions02/inactive_customers_DF")

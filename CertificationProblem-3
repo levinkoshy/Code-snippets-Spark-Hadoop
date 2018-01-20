@@ -1,0 +1,47 @@
+spark-shell --master yarn \
+ --conf spark-ui.port=12345 \
+ --num-executors 6 \
+ --executor-cores 2 \
+ --executor-memory 2G
+
+val crimeData = sc.textFile("/public/crime/csv")
+val header = crimeData.first
+val crimeDataWithoutHeader = crimeData.filter(x=> x!=header)
+
+val crimeDataResidence = crimeDataWithoutHeader.filter(x => x.split(",(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)", -1)(7)== "RESIDENCE")
+
+val crimeDataResidenceMap = crimeDataResidence.map(x=> (x.split(",(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)", -1)(5),1)).reduceByKey((x,y)=> x + y)
+
+val crimeDataResidenceMapSort = sc.parallelize(crimeDataResidenceMap.map(x=>(x._2,x._1)).sortByKey(false).take(3))
+//take makes it an array; so it has to be converted into an RDD-- so sc.parallelize
+
+
+crimeDataResidenceMapSort
+ .map(x=> (x._2,x._1))
+ .toDF("crime_type","crime_count")
+ .write.json("/user/levinkoshy/solutions/solutions03/RESIDENCE_AREA_CRIMINAL_TYPE_DATA")
+
+//testing-validation
+val output = sc.textFile("/user/levinkoshy/solutions/solutions03/RESIDENCE_AREA_CRIMINAL_TYPE_DATA")
+output.collect.foreach(println)
+
+
+///
+//
+//Using DataFrames
+
+val crimeData = sc.textFile("/public/crime/csv")
+val header = crimeData.first
+val crimeDataWithoutHeader = crimeData.filter(x=> x!=header)
+
+val crimeDataWithoutHeaderDF = crimeDataWithoutHeader.map(x => (x.split(",(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)", -1)(5),x.split(",(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)", -1)(7))).toDF("crime_type","location_description")
+
+crimeDataWithoutHeaderDF.registerTempTable("RESIDENCE_AREA_CRIMINAL_TYPE_DATA")
+
+sqlContext.setConf("spark.sql.shuffle.partitions","4")
+val crimeDataResidenceDF=sqlContext.sql("select crime_type, count(1) crime_count from RESIDENCE_AREA_CRIMINAL_TYPE_DATA where location_description='RESIDENCE' group by crime_type order by crime_count desc limit 3")
+
+crimeDataResidenceDF.write.json("/user/levinkoshy/solutions/solutions03/RESIDENCE_AREA_CRIMINAL_TYPE_DATA_DF")
+
+sc.textFile("/user/levinkoshy/solutions/solutions03/RESIDENCE_AREA_CRIMINAL_TYPE_DATA_DF").collect.foreach(println)
+//textFile can be used when it is JSON
